@@ -1,5 +1,11 @@
 # @sveltejs/kit
 
+## 1.16.4
+
+### Patch Changes
+
+- fix: only skip hydration with vite overlay if current page is an error ([`bc70b4e63`](https://github.com/sveltejs/kit/commit/bc70b4e636fcbd9593356996bf737e014ff8c238))
+
 ## 1.16.3
 
 ### Patch Changes
