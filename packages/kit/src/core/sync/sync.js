@@ -7,6 +7,7 @@ import { write_types, write_all_types } from './write_types/index.js';
 import { write_ambient } from './write_ambient.js';
 import { write_non_ambient } from './write_non_ambient.js';
 import { write_server } from './write_server.js';
+import { write_api } from './write_api.js';
 
 /**
  * Initialize SvelteKit's generated files.
@@ -32,6 +33,7 @@ export async function create(config) {
 	write_server(config, output);
 	write_root(manifest_data, output);
 	await write_all_types(config, manifest_data);
+	write_api(config, manifest_data);
 
 	return { manifest_data };
 }
@@ -46,6 +48,7 @@ export async function create(config) {
  */
 export async function update(config, manifest_data, file) {
 	await write_types(config, manifest_data, file);
+	write_api(config, manifest_data);
 
 	return { manifest_data };
 }
@@ -69,6 +72,7 @@ export async function all_types(config, mode) {
 	init(config, mode);
 	const manifest_data = create_manifest_data({ config });
 	await write_all_types(config, manifest_data);
+	write_api(config, manifest_data);
 }
 
 /**
