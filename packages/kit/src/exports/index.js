@@ -84,11 +84,12 @@ export function isHttpError(e, status) {
 /**
  * Redirect a request. When called during request handling, SvelteKit will return a redirect response.
  * Make sure you're not catching the thrown redirect, which would prevent SvelteKit from handling it.
- * @param {300 | 301 | 302 | 303 | 304 | 305 | 306 | 307 | 308 | ({} & number)} status The [HTTP status code](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status#redirection_messages). Must be in the range 300-308.
- * @param {string | URL} location The location to redirect to.
+ * @param {300 | 301 | 302 | 303 | 304 | 305 | 306 | 307 | 308} status The [HTTP status code](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status#redirection_messages). Must be in the range 300-308.
+ * @param {import('@sveltejs/kit').IsRelativePath<S> extends true ? import('@sveltejs/kit').MatchedPaths<S & string> extends { matched: any } ? S & string : import('@sveltejs/kit').Equals<S, string> extends true ? S & string : `no matched path with id: ${S & string}` : string} location The location to redirect to.
  * @throws {Redirect} This error instructs SvelteKit to redirect to the specified location.
  * @throws {Error} If the provided status is invalid.
  * @return {never}
+ * @template S
  */
 export function redirect(status, location) {
 	if ((!BROWSER || DEV) && (isNaN(status) || status < 300 || status > 308)) {

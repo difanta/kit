@@ -721,10 +721,10 @@ async function load_node({ loader, parent, url, params, route, server_data_node 
 							typeof data !== 'object'
 								? `a ${typeof data}`
 								: data instanceof Response
-									? 'a Response object'
-									: Array.isArray(data)
-										? 'an array'
-										: 'a non-plain object'
+								  ? 'a Response object'
+								  : Array.isArray(data)
+								    ? 'an array'
+								    : 'a non-plain object'
 						}, but must return a plain object at the top level (i.e. \`return {...}\`)`
 					);
 				}
@@ -1703,7 +1703,8 @@ export function disableScrollHandling() {
  * Returns a Promise that resolves when SvelteKit navigates (or fails to navigate, in which case the promise rejects) to the specified `url`.
  * For external URLs, use `window.location = url` instead of calling `goto(url)`.
  *
- * @param {string | URL} url Where to navigate to. Note that if you've set [`config.kit.paths.base`](https://kit.svelte.dev/docs/configuration#paths) and the URL is root-relative, you need to prepend the base path if you want to navigate within the app.
+ * @template S
+ * @param {S extends string ? import('@sveltejs/kit').MatchedLeafs<S> extends { matched: any } ? S : import('@sveltejs/kit').Equals<S, string> extends true ? S : { error: `no matched routes with id: ${S}` } : string | URL} url Where to navigate to. Note that if you've set [`config.kit.paths.base`](https://kit.svelte.dev/docs/configuration#paths) and the URL is root-relative, you need to prepend the base path if you want to navigate within the app.
  * @param {Object} [opts] Options related to the navigation
  * @param {boolean} [opts.replaceState] If `true`, will replace the current `history` entry rather than creating a new one with `pushState`
  * @param {boolean} [opts.noScroll] If `true`, the browser will maintain its scroll position rather than scrolling to the top of the page after navigation
