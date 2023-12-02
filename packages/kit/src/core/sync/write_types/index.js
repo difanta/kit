@@ -4,7 +4,7 @@ import MagicString from 'magic-string';
 import { posixify, rimraf, walk } from '../../../utils/filesystem.js';
 import { compact } from '../../../utils/array.js';
 import { ts } from '../ts.js';
-import { write_api } from './write_api/index.js';
+import { parseSlugs } from './write_api/index.js';
 
 /**
  *  @typedef {{
@@ -124,8 +124,6 @@ export async function write_all_types(config, manifest_data) {
 		}
 	}
 
-	write_api(config, manifest_data);
-
 	fs.writeFileSync(meta_data_file, JSON.stringify(meta_data, null, '\t'));
 }
 
@@ -151,7 +149,6 @@ export async function write_types(config, manifest_data, file) {
 	if (!route.leaf && !route.layout && !route.endpoint) return; // nothing to do
 
 	update_types(config, create_routes_map(manifest_data), route);
-	write_api(config, manifest_data);
 }
 
 /**
@@ -239,11 +236,6 @@ function update_types(config, routes, route, to_delete = new Set()) {
 		);
 	}
 
-	const api_types_path = posixify(
-		path.relative(outdir, path.join(config.kit.outDir, 'types', '$api')) // TODO: potential failure point if api file is moved
-	);
-	declarations.push(`type FetchType = typeof import('${api_types_path}').fetch;`);
-
 	if (route.leaf) {
 		let route_info = routes.get(route.leaf);
 		if (!route_info) {
@@ -272,10 +264,10 @@ function update_types(config, routes, route, to_delete = new Set()) {
 
 		if (route.leaf.server) {
 			exports.push(
-				'export type Action<OutputData extends Record<string, any> | void = Record<string, any> | void> = Kit.Action<RouteParams, OutputData, RouteId, FetchType>'
+				'export type Action<OutputData extends Record<string, any> | void = Record<string, any> | void> = Kit.Action<RouteParams, OutputData, RouteId>'
 			);
 			exports.push(
-				'export type Actions<OutputData extends Record<string, any> | void = Record<string, any> | void> = Kit.Actions<RouteParams, OutputData, RouteId, FetchType>'
+				'export type Actions<OutputData extends Record<string, any> | void = Record<string, any> | void> = Kit.Actions<RouteParams, OutputData, RouteId>'
 			);
 		}
 	}
@@ -343,14 +335,110 @@ function update_types(config, routes, route, to_delete = new Set()) {
 		if (proxies.universal?.modified) to_delete.delete(proxies.universal.file_name);
 	}
 
-	if (route.endpoint) {
-		exports.push(
-			'export type RequestHandler = Kit.RequestHandler<RouteParams, RouteId, FetchType>;'
+	if (route.endpoint || route.leaf) {
+		declarations.push('type optional_trailing = `` | `?${string}`;');
+		declarations.push('type restricted_characters = ` ` | `/` | `\\\\`;');
+		declarations.push('type restricted_characters_rest = ` ` | `\\\\`;');
+		declarations.push(
+			'type RemoveTrailingSlash<S extends string> = S extends "/" ? S : S extends `${infer _S}/` ? _S : S;'
+		);
+		declarations.push(
+			`\n/** Check if is not empty, and does not contain restricted characters */ \ntype ValidateRequired<S extends string> = FixDynamicStr<S> extends \`/\${infer Slug}\` ?
+			Slug extends ('' | \`\${string}\${restricted_characters}\${string}\`) ?
+					false
+				: true
+			: false;\n`
+		);
+		declarations.push(
+			`/** Check if does not contain restricted characters. If the check fails, \n * check if it has a starting slash and take the content after it as a slug parameter and validate it */ \ntype ValidateOptional<S extends string> = FixDynamicStr<S> extends \`/\${infer Slug}\` ?
+			Slug extends (\`\${string}\${restricted_characters}\${string}\`) ?
+					false
+				: true
+			: FixDynamicStr<S> extends '' ?
+				true
+			  : false;\n`
+		);
+		declarations.push(
+			`/** Almost no check, just exclude restricted characters */ \ntype ValidateRest<S extends string> = FixDynamicStr<S> extends \`/\${infer Slug}\` ?
+			Slug extends (\`\${string}\${restricted_characters_rest}\${string}\`) ?
+					false
+				: true
+			: FixDynamicStr<S> extends '' ?
+				true
+			  : false;\n`
+		);
+
+		declarations.push(
+			`\n/** Check if is empty or starts with '#' or '?' and does not contain restricted characters */ \ntype ValidateTrailing<S extends string> = FixDynamicTrailing<S> extends '' | \`?\${infer Slug}\` | \`#\${infer Slug}\` ?
+			Slug extends (\`\${string}\${restricted_characters}\${string}\`) ?
+					false
+				: true
+			: false;\n`
+		);
+		declarations.push('type UnionAllTrue<B extends boolean> = [B] extends [true] ? true : false;');
+		declarations.push(
+			'type FixDynamicStr<S> = S extends undefined | null ? "" : Kit.Equals<S, string> extends true ? `/${string}` : S;'
+		);
+		declarations.push(
+			'type FixDynamicTrailing<S> = S extends undefined | null ? "" : Kit.Equals<S, string> extends true ? `?${string}` : S;'
+		);
+
+		declarations.push("declare module '__sveltekit/paths' {");
+		declarations.push(
+			`\tinterface paths { \n\t\tbase: '${config.kit.paths.base}', \n\t\tassets: '${config.kit.paths.assets}'\n\t}`
+		);
+		declarations.push('}');
+
+		const { matcher_str, validator_str } = parseSlugs(route.id);
+		declarations.push(
+			`type DoesMatch<ToCheck> = ToCheck extends string ? RemoveTrailingSlash<ToCheck> extends \`${config.kit.paths.base}${matcher_str}\` ? ${validator_str} : false : false; `
 		);
 	}
 
+	if (route.endpoint) {
+		exports.push('export type RequestHandler = Kit.RequestHandler<RouteParams, RouteId>;');
+
+		declarations.push(
+			'interface TypedRequestInit<Method extends string> extends RequestInit { \n\tmethod?: Method; \n}'
+		);
+		declarations.push(
+			'interface TypedRequestInitRequired<Method extends string> extends RequestInit { \n\tmethod: Method; \n}'
+		);
+		declarations.push(
+			'type GetEndpointType<F extends (...args: any) => any> = Awaited<ReturnType<F>> extends Kit.TypedResponse<infer T> ? Kit.Jsonify<T> : never;'
+		);
+		declarations.push(
+			'type ExpandMethods<T> = { [Method in keyof T]: T[Method] extends (...args: any) => any ? GetEndpointType<T[Method]> : never; };'
+		);
+
+		const route_import_path = posixify(
+			path.relative(outdir, replace_ext_with_js(route.endpoint.file))
+		);
+		declarations.push(`type Methods = ExpandMethods<typeof import('${route_import_path}')>`);
+		declarations.push('declare module "@sveltejs/kit" {');
+		declarations.push(`\texport function fetch<
+					S,
+					Method extends keyof Methods = "GET" & keyof Methods,
+				>(
+					input: S extends string ? Kit.IsRelativePath<S> extends true ? DoesMatch<S> extends true ? S : never : never : never,
+					...init: "GET" extends keyof Methods ? [init?: TypedRequestInit<Method | keyof Methods>] : [init: TypedRequestInitRequired<Method>]
+				): Promise<Kit.TypedResponse<Methods[Method], true> | Kit.TypedResponse<App.Error, false>>;`);
+		declarations.push('}');
+	}
+
+	if (route.leaf) {
+		declarations.push('declare module "@sveltejs/kit" {');
+		declarations.push(`\texport function fetch<
+			S,
+		>(
+			input: S extends string ? Kit.IsRelativePath<S> extends true ? DoesMatch<S> extends true ? S : never : never : never,
+			init?: RequestInit
+		): Promise<Response>;`);
+		declarations.push('}');
+	}
+
 	if (route.leaf?.server || route.layout?.server || route.endpoint) {
-		exports.push('export type RequestEvent = Kit.RequestEvent<RouteParams, RouteId, FetchType>;');
+		exports.push('export type RequestEvent = Kit.RequestEvent<RouteParams, RouteId>;');
 	}
 
 	const output = [imports.join('\n'), declarations.join('\n'), exports.join('\n')]
@@ -409,7 +497,7 @@ function process_node(node, outdir, is_page, proxies, all_pages_have_load = true
 				? 'Partial<App.PageData> & Record<string, any> | void'
 				: `OutputDataShape<${parent_type}>`;
 		exports.push(
-			`export type ${prefix}ServerLoad<OutputData extends ${output_data_shape} = ${output_data_shape}> = Kit.ServerLoad<${params}, ${parent_type}, OutputData, ${route_id}, FetchType>;`
+			`export type ${prefix}ServerLoad<OutputData extends ${output_data_shape} = ${output_data_shape}> = Kit.ServerLoad<${params}, ${parent_type}, OutputData, ${route_id}>;`
 		);
 
 		exports.push(`export type ${prefix}ServerLoadEvent = Parameters<${prefix}ServerLoad>[0];`);
@@ -463,7 +551,7 @@ function process_node(node, outdir, is_page, proxies, all_pages_have_load = true
 				? 'Partial<App.PageData> & Record<string, any> | void'
 				: `OutputDataShape<${parent_type}>`;
 		exports.push(
-			`export type ${prefix}Load<OutputData extends ${output_data_shape} = ${output_data_shape}> = Kit.Load<${params}, ${prefix}ServerData, ${parent_type}, OutputData, ${route_id}, FetchType>;`
+			`export type ${prefix}Load<OutputData extends ${output_data_shape} = ${output_data_shape}> = Kit.Load<${params}, ${prefix}ServerData, ${parent_type}, OutputData, ${route_id}>;`
 		);
 
 		exports.push(`export type ${prefix}LoadEvent = Parameters<${prefix}Load>[0];`);

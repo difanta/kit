@@ -64,6 +64,11 @@ export type IsRelativePath<S> = S extends string
 		: false
 	: false;
 
+export function fetch<S>(
+	input: S extends string ? (IsRelativePath<S> extends true ? never : S) : RequestInfo | URL,
+	init?: RequestInit
+): Promise<Response>;
+
 /**
  * [Adapters](https://kit.svelte.dev/docs/adapters) are responsible for taking the production build and turning it into something that can be deployed to a platform of your choosing.
  */
@@ -721,11 +726,8 @@ export type Load<
 	InputData extends Record<string, unknown> | null = Record<string, any> | null,
 	ParentData extends Record<string, unknown> = Record<string, any>,
 	OutputData extends Record<string, unknown> | void = Record<string, any> | void,
-	RouteId extends string | null = string | null,
-	FetchType extends typeof fetch = typeof fetch
-> = (
-	event: LoadEvent<Params, InputData, ParentData, RouteId, FetchType>
-) => MaybePromise<OutputData>;
+	RouteId extends string | null = string | null
+> = (event: LoadEvent<Params, InputData, ParentData, RouteId>) => MaybePromise<OutputData>;
 
 /**
  * The generic form of `PageLoadEvent` and `LayoutLoadEvent`. You should import those from `./$types` (see [generated types](https://kit.svelte.dev/docs/types#generated-types))
@@ -735,8 +737,7 @@ export interface LoadEvent<
 	Params extends Partial<Record<string, string>> = Partial<Record<string, string>>,
 	Data extends Record<string, unknown> | null = Record<string, any> | null,
 	ParentData extends Record<string, unknown> = Record<string, any>,
-	RouteId extends string | null = string | null,
-	FetchType extends typeof fetch = typeof fetch
+	RouteId extends string | null = string | null
 > extends NavigationEvent<Params, RouteId> {
 	/**
 	 * `fetch` is equivalent to the [native `fetch` web API](https://developer.mozilla.org/en-US/docs/Web/API/fetch), with a few additional features:
@@ -749,7 +750,7 @@ export interface LoadEvent<
 	 *
 	 * You can learn more about making credentialed requests with cookies [here](https://kit.svelte.dev/docs/load#cookies)
 	 */
-	fetch: FetchType;
+	fetch: typeof fetch;
 	/**
 	 * Contains the data returned by the route's server `load` function (in `+layout.server.js` or `+page.server.js`), if any.
 	 */
@@ -825,7 +826,6 @@ export interface LoadEvent<
 	 */
 	depends(...deps: string[]): void;
 }
-
 export interface NavigationEvent<
 	Params extends Partial<Record<string, string>> = Partial<Record<string, string>>,
 	RouteId extends string | null = string | null
@@ -1007,8 +1007,7 @@ export type ParamMatcher = (param: string) => boolean;
 
 export interface RequestEvent<
 	Params extends Partial<Record<string, string>> = Partial<Record<string, string>>,
-	RouteId extends string | null = string | null,
-	FetchType extends typeof fetch = typeof fetch
+	RouteId extends string | null = string | null
 > {
 	/**
 	 * Get or set cookies related to the current request
@@ -1025,7 +1024,7 @@ export interface RequestEvent<
 	 *
 	 * You can learn more about making credentialed requests with cookies [here](https://kit.svelte.dev/docs/load#cookies)
 	 */
-	fetch: FetchType;
+	fetch: typeof fetch;
 	/**
 	 * The client's IP address, set by the adapter.
 	 */
@@ -1100,9 +1099,8 @@ export interface RequestEvent<
  */
 export type RequestHandler<
 	Params extends Partial<Record<string, string>> = Partial<Record<string, string>>,
-	RouteId extends string | null = string | null,
-	FetchType extends typeof fetch = typeof fetch
-> = (event: RequestEvent<Params, RouteId, FetchType>) => MaybePromise<Response>;
+	RouteId extends string | null = string | null
+> = (event: RequestEvent<Params, RouteId>) => MaybePromise<Response>;
 
 export interface ResolveOptions {
 	/**
@@ -1175,16 +1173,14 @@ export type ServerLoad<
 	Params extends Partial<Record<string, string>> = Partial<Record<string, string>>,
 	ParentData extends Record<string, any> = Record<string, any>,
 	OutputData extends Record<string, any> | void = Record<string, any> | void,
-	RouteId extends string | null = string | null,
-	FetchType extends typeof fetch = typeof fetch
-> = (event: ServerLoadEvent<Params, ParentData, RouteId, FetchType>) => MaybePromise<OutputData>;
+	RouteId extends string | null = string | null
+> = (event: ServerLoadEvent<Params, ParentData, RouteId>) => MaybePromise<OutputData>;
 
 export interface ServerLoadEvent<
 	Params extends Partial<Record<string, string>> = Partial<Record<string, string>>,
 	ParentData extends Record<string, any> = Record<string, any>,
-	RouteId extends string | null = string | null,
-	FetchType extends typeof fetch = typeof fetch
-> extends RequestEvent<Params, RouteId, FetchType> {
+	RouteId extends string | null = string | null
+> extends RequestEvent<Params, RouteId> {
 	/**
 	 * `await parent()` returns data from parent `+layout.server.js` `load` functions.
 	 *
@@ -1238,9 +1234,8 @@ export interface ServerLoadEvent<
 export type Action<
 	Params extends Partial<Record<string, string>> = Partial<Record<string, string>>,
 	OutputData extends Record<string, any> | void = Record<string, any> | void,
-	RouteId extends string | null = string | null,
-	FetchType extends typeof fetch = typeof fetch
-> = (event: RequestEvent<Params, RouteId, FetchType>) => MaybePromise<OutputData>;
+	RouteId extends string | null = string | null
+> = (event: RequestEvent<Params, RouteId>) => MaybePromise<OutputData>;
 
 /**
  * Shape of the `export const actions = {..}` object in `+page.server.js`.
@@ -1249,9 +1244,8 @@ export type Action<
 export type Actions<
 	Params extends Partial<Record<string, string>> = Partial<Record<string, string>>,
 	OutputData extends Record<string, any> | void = Record<string, any> | void,
-	RouteId extends string | null = string | null,
-	FetchType extends typeof fetch = typeof fetch
-> = Record<string, Action<Params, OutputData, RouteId, FetchType>>;
+	RouteId extends string | null = string | null
+> = Record<string, Action<Params, OutputData, RouteId>>;
 
 /**
  * When calling a form action via fetch, the response will be one of these shapes.

@@ -1,4 +1,4 @@
-/** @type {import('@sveltejs/kit').Load} */
+/** @type {import('./$types.js').PageLoad} */
 export async function load({ fetch }) {
 	return {
 		a: fetch('/embed/a').then((x) => x.text()),
