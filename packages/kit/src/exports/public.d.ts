@@ -46,6 +46,14 @@ export type MatchedPaths<S extends string> = {
 		: never]: ValidURLs<S>[Index];
 };
 
+export type MatchedEndpoints<S extends string> = {
+	[Index in keyof ValidURLs<S> as ValidURLs<S>[Index]['does_match'] extends true
+		? ValidURLs<S>[Index]['endpoint'] extends true
+			? 'matched'
+			: never
+		: never]: ValidURLs<S>[Index];
+};
+
 export type Jsonify<T> = T extends { toJSON(): infer U }
 	? U
 	: T extends object
@@ -61,6 +69,62 @@ export type IsRelativePath<S> = S extends string
 		? true
 		: false
 	: false;
+
+type KeysOfUnion<T> = T extends T ? keyof T : never;
+
+type ExtractMethodsFromMatched<T> = T extends { matched: { methods: infer K } } ? K : {};
+
+export type ExtractIdFromMatched<T> = T extends { matched: { id: infer K } }
+	? K extends string
+		? K
+		: ''
+	: '';
+
+export type ValidMethod<S> = string &
+	KeysOfUnion<ExtractMethodsFromMatched<MatchedPaths<S & string>>>;
+
+export type MatchedPathId<S> = string & ExtractIdFromMatched<MatchedPaths<S & string>>;
+
+export type TypedResponseFromPath<S extends string, Method extends ValidMethod<S>> =
+	| TypedResponse<ExtractMethodsFromMatched<MatchedPaths<S>>[Method], true>
+	| TypedResponse<App.Error, false>;
+
+interface TypedRequestInitOptional<Method extends string> extends RequestInit {
+	method?: Method;
+}
+interface TypedRequestInitRequired<Method extends string> extends RequestInit {
+	method: Method;
+}
+
+export type TypedRequestInit<Method extends string, S> = 'GET' extends ValidMethod<S & string>
+	? [init?: TypedRequestInitOptional<Method | ValidMethod<S & string>>]
+	: [init: TypedRequestInitRequired<Method>];
+
+export type MatchPaths<S extends string> = IsRelativePath<S> extends true
+	? MatchedPaths<S> extends { matched: any }
+		? S
+		: `No matched path with ${S}`
+	: `Is not a relative path`;
+
+export type MatchPathsFallback<S extends string> = IsRelativePath<S> extends true
+	? MatchedPaths<S> extends { matched: { methods: infer K } }
+		? Equals<K, Record<string, any>> extends true
+			? S
+			: `Is a match for ${MatchedPathId<S>} but valid methods exist: ${ValidMethod<S>}`
+		: Equals<S, string> extends true
+		  ? S
+		  : `No matched path with ${S}`
+	: URL | RequestInfo;
+
+export function fetch<S>(
+	input: S extends string ? MatchPathsFallback<S> : URL | RequestInfo,
+	init?: RequestInit
+): Promise<Response>;
+
+export function fetch<S, Method extends ValidMethod<S & string> = 'GET' & ValidMethod<S & string>>(
+	input: S extends string ? MatchPaths<S> : `Is not a string`,
+	...init: TypedRequestInit<Method, S>
+): Promise<TypedResponseFromPath<S & string, Method>>;
 
 /**
  * [Adapters](https://kit.svelte.dev/docs/adapters) are responsible for taking the production build and turning it into something that can be deployed to a platform of your choosing.
@@ -777,11 +841,8 @@ export type Load<
 	InputData extends Record<string, unknown> | null = Record<string, any> | null,
 	ParentData extends Record<string, unknown> = Record<string, any>,
 	OutputData extends Record<string, unknown> | void = Record<string, any> | void,
-	RouteId extends string | null = string | null,
-	FetchType extends typeof fetch = typeof fetch
-> = (
-	event: LoadEvent<Params, InputData, ParentData, RouteId, FetchType>
-) => MaybePromise<OutputData>;
+	RouteId extends string | null = string | null
+> = (event: LoadEvent<Params, InputData, ParentData, RouteId>) => MaybePromise<OutputData>;
 
 /**
  * The generic form of `PageLoadEvent` and `LayoutLoadEvent`. You should import those from `./$types` (see [generated types](https://kit.svelte.dev/docs/types#generated-types))
@@ -791,8 +852,7 @@ export interface LoadEvent<
 	Params extends Partial<Record<string, string>> = Partial<Record<string, string>>,
 	Data extends Record<string, unknown> | null = Record<string, any> | null,
 	ParentData extends Record<string, unknown> = Record<string, any>,
-	RouteId extends string | null = string | null,
-	FetchType extends typeof fetch = typeof fetch
+	RouteId extends string | null = string | null
 > extends NavigationEvent<Params, RouteId> {
 	/**
 	 * `fetch` is equivalent to the [native `fetch` web API](https://developer.mozilla.org/en-US/docs/Web/API/fetch), with a few additional features:
@@ -805,7 +865,7 @@ export interface LoadEvent<
 	 *
 	 * You can learn more about making credentialed requests with cookies [here](https://kit.svelte.dev/docs/load#cookies)
 	 */
-	fetch: FetchType;
+	fetch: typeof fetch;
 	/**
 	 * Contains the data returned by the route's server `load` function (in `+layout.server.js` or `+page.server.js`), if any.
 	 */
@@ -1081,8 +1141,7 @@ export type ParamMatcher = (param: string) => boolean;
 
 export interface RequestEvent<
 	Params extends Partial<Record<string, string>> = Partial<Record<string, string>>,
-	RouteId extends string | null = string | null,
-	FetchType extends typeof fetch = typeof fetch
+	RouteId extends string | null = string | null
 > {
 	/**
 	 * Get or set cookies related to the current request
@@ -1099,7 +1158,7 @@ export interface RequestEvent<
 	 *
 	 * You can learn more about making credentialed requests with cookies [here](https://kit.svelte.dev/docs/load#cookies)
 	 */
-	fetch: FetchType;
+	fetch: typeof fetch;
 	/**
 	 * The client's IP address, set by the adapter.
 	 */
@@ -1174,9 +1233,10 @@ export interface RequestEvent<
  */
 export type RequestHandler<
 	Params extends Partial<Record<string, string>> = Partial<Record<string, string>>,
-	RouteId extends string | null = string | null,
-	FetchType extends typeof fetch = typeof fetch
-> = (event: RequestEvent<Params, RouteId, FetchType>) => MaybePromise<Response>;
+	RouteId extends string | null = string | null
+> = (
+	event: RequestEvent<Params, RouteId>
+) => MaybePromise<Response extends TypedResponse<infer T> ? TypedResponse<T> : Response>;
 
 export interface ResolveOptions {
 	/**
@@ -1254,16 +1314,14 @@ export type ServerLoad<
 	Params extends Partial<Record<string, string>> = Partial<Record<string, string>>,
 	ParentData extends Record<string, any> = Record<string, any>,
 	OutputData extends Record<string, any> | void = Record<string, any> | void,
-	RouteId extends string | null = string | null,
-	FetchType extends typeof fetch = typeof fetch
-> = (event: ServerLoadEvent<Params, ParentData, RouteId, FetchType>) => MaybePromise<OutputData>;
+	RouteId extends string | null = string | null
+> = (event: ServerLoadEvent<Params, ParentData, RouteId>) => MaybePromise<OutputData>;
 
 export interface ServerLoadEvent<
 	Params extends Partial<Record<string, string>> = Partial<Record<string, string>>,
 	ParentData extends Record<string, any> = Record<string, any>,
-	RouteId extends string | null = string | null,
-	FetchType extends typeof fetch = typeof fetch
-> extends RequestEvent<Params, RouteId, FetchType> {
+	RouteId extends string | null = string | null
+> extends RequestEvent<Params, RouteId> {
 	/**
 	 * `await parent()` returns data from parent `+layout.server.js` `load` functions.
 	 *
@@ -1331,9 +1389,8 @@ export interface ServerLoadEvent<
 export type Action<
 	Params extends Partial<Record<string, string>> = Partial<Record<string, string>>,
 	OutputData extends Record<string, any> | void = Record<string, any> | void,
-	RouteId extends string | null = string | null,
-	FetchType extends typeof fetch = typeof fetch
-> = (event: RequestEvent<Params, RouteId, FetchType>) => MaybePromise<OutputData>;
+	RouteId extends string | null = string | null
+> = (event: RequestEvent<Params, RouteId>) => MaybePromise<OutputData>;
 
 /**
  * Shape of the `export const actions = {..}` object in `+page.server.js`.
@@ -1342,9 +1399,8 @@ export type Action<
 export type Actions<
 	Params extends Partial<Record<string, string>> = Partial<Record<string, string>>,
 	OutputData extends Record<string, any> | void = Record<string, any> | void,
-	RouteId extends string | null = string | null,
-	FetchType extends typeof fetch = typeof fetch
-> = Record<string, Action<Params, OutputData, RouteId, FetchType>>;
+	RouteId extends string | null = string | null
+> = Record<string, Action<Params, OutputData, RouteId>>;
 
 /**
  * When calling a form action via fetch, the response will be one of these shapes.

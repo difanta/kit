@@ -30,16 +30,10 @@ export function write_api(config, manifest_data) {
 	api_declarations.push('}');
 
 	api_declarations.push(
-		'interface TypedRequestInit<Method extends string> extends RequestInit { \n\tmethod?: Method; \n}'
-	);
-	api_declarations.push(
-		'interface TypedRequestInitRequired<Method extends string> extends RequestInit { \n\tmethod: Method; \n}'
-	);
-	api_declarations.push(
 		'type GetEndpointType<F extends (...args: any) => any> = Awaited<ReturnType<F>> extends Kit.TypedResponse<infer T> ? Kit.Jsonify<T> : never;'
 	);
 	api_declarations.push(
-		'type ExpandMethods<T> = { [Method in keyof T]: T[Method] extends (...args: any) => any ? GetEndpointType<T[Method]> : never; };'
+		'type ExpandMethods<T> = Kit.Equals<T, any> extends true ? Record<string, any> : { [Method in keyof T]: T[Method] extends (...args: any) => any ? GetEndpointType<T[Method]> : never; };'
 	);
 	api_declarations.push('type optional_trailing = `` | `?${string}`;');
 	api_declarations.push('type restricted_characters = ` ` | `/` | `\\\\`;');
@@ -112,81 +106,22 @@ export function write_api(config, manifest_data) {
 				);
 				api_endpoints.push(`\t\t\tmethods: ExpandMethods<typeof import('${route_import_path}')>`);
 				api_endpoints.push('\t\t\tendpoint: true');
+				api_endpoints.push('\t\t\tleaf: false');
 			} else {
+				api_endpoints.push(`\t\t\tmethods: { GET: any }`);
 				api_endpoints.push('\t\t\tendpoint: false');
+				api_endpoints.push('\t\t\tleaf: true');
 			}
-			if (route.leaf) api_endpoints.push('\t\t\tleaf: true');
-			else api_endpoints.push('\t\t\tleaf: false');
 			api_endpoints.push('\t\t};');
 			++index;
 		}
 	}
 
 	api_endpoints.push('\t}');
+
 	api_endpoints.push('}');
 
-	/** @type {string[]} */
-	const api_utility_types = [];
-
-	api_utility_types.push(`type MatchedEndpoints<S extends string> = {
-		[Index in keyof Kit.ValidURLs<S> as Kit.ValidURLs<S>[Index]["does_match"] extends true 
-		? Kit.ValidURLs<S>[Index]["endpoint"] extends true
-		? "matched" : never : never]: Kit.ValidURLs<S>[Index];
-	};`);
-
-	api_utility_types.push(
-		'type ExtractMethodsFromMatched<T> = T extends { matched: { methods: infer K } } ? K : {};'
-	);
-
-	api_utility_types.push(
-		"type ExtractIdFromMatched<T> = T extends { matched: { id: infer K } } ? K extends string ? K : '' : '';"
-	);
-
-	api_utility_types.push(
-		'type ValidMethod<S extends string> = string & keyof ExtractMethodsFromMatched<MatchedEndpoints<S>>;'
-	);
-
-	api_utility_types.push(
-		'type TypedResponseFromPath<S extends string, Method extends ValidMethod<S>> = Kit.TypedResponse<ExtractMethodsFromMatched<MatchedEndpoints<S>>[Method], true> | Kit.TypedResponse<App.Error, false>;'
-	);
-
-	/** @type {string[]} */
-	const api_exports = [];
-
-	api_exports.push(
-		`export declare function fetch<
-		S,
-		Method extends ValidMethod<S & string> = "GET" & ValidMethod<S & string>
-	>(
-		input: S extends string ? Kit.IsRelativePath<S> extends true ? MatchedEndpoints<S> extends { matched: any } ? S : \`no matched endpoints with id: \${S}\` : never : never,
-		...init: "GET" extends ValidMethod<S & string> ? [init?: TypedRequestInit<Method | ValidMethod<S & string>>] : [init: TypedRequestInitRequired<Method>]
-	): Promise<TypedResponseFromPath<S & string, Method>>;`
-	);
-
-	api_exports.push(`export declare function fetch<S>(
-		input: S extends string ? Kit.IsRelativePath<S> extends true ? MatchedEndpoints<S> extends { matched: any } ? \`invalid method for endpoint: \${ExtractIdFromMatched<MatchedEndpoints<S>>}, available_methods: \${ValidMethod<S>} \` : Kit.Equals<S, string> extends true ? S : \`no matched endpoints with id: \${S}\` : URL | RequestInfo : URL | RequestInfo,
-		init?: RequestInit
-	): Promise<Response>;`);
-
-	api_exports.push(
-		`declare global {
-	function fetch<
-		S,
-		Method extends ValidMethod<S & string> = "GET" & ValidMethod<S & string>
-	>(
-		input: S extends string ? Kit.IsRelativePath<S> extends true ? MatchedEndpoints<S> extends { matched: any } ? S : \`no matched endpoints with id: \${S}\` : never : never,
-		...init: "GET" extends ValidMethod<S & string> ? [init?: TypedRequestInit<Method | ValidMethod<S & string>>] : [init: TypedRequestInitRequired<Method>]
-	): Promise<TypedResponseFromPath<S & string, Method>>;
-}`
-	);
-
-	const output = [
-		api_imports.join('\n'),
-		api_declarations.join('\n'),
-		api_endpoints.join('\n'),
-		api_utility_types.join('\n'),
-		api_exports.join('\n\n')
-	]
+	const output = [api_imports.join('\n'), api_declarations.join('\n'), api_endpoints.join('\n')]
 		.filter(Boolean)
 		.join('\n\n');
 

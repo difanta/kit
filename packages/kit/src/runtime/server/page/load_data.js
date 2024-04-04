@@ -60,6 +60,7 @@ export async function load_server_data({ event, state, node, parent }) {
 
 	const result = await node.server.load?.call(null, {
 		...event,
+		// @ts-ignore FETCH TODO
 		fetch: (info, init) => {
 			const url = new URL(info instanceof Request ? info.url : info, event.url);
 

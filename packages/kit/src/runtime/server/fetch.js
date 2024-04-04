@@ -11,7 +11,7 @@ import * as paths from '__sveltekit/paths';
  *   get_cookie_header: (url: URL, header: string | null) => string;
  *   set_internal: (name: string, value: string, opts: import('./page/types.js').Cookie['options']) => void;
  * }} opts
- * @returns {typeof fetch}
+ * @returns {typeof import('@sveltejs/kit').fetch}
  */
 export function create_fetch({ event, options, manifest, state, get_cookie_header, set_internal }) {
 	/**
@@ -29,6 +29,7 @@ export function create_fetch({ event, options, manifest, state, get_cookie_heade
 		return options.hooks.handleFetch({
 			event,
 			request: original_request,
+			// @ts-ignore FETCH TODO
 			fetch: async (info, init) => {
 				const request = normalize_fetch_input(info, init, event.url);
 
