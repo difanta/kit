@@ -70,7 +70,9 @@ export type IsRelativePath<S> = S extends string
 		: false
 	: false;
 
-type KeysOfUnion<T> = T extends T ? keyof T : never;
+type KeyofUnion<T> = T extends T ? keyof T : never;
+
+type PickUnionKey<T, K extends KeyofUnion<T>> = T extends { [k in K]?: any } ? T[K] : undefined;
 
 type ExtractMethodsFromMatched<T> = T extends { matched: { methods: infer K } } ? K : {};
 
@@ -81,13 +83,13 @@ export type ExtractIdFromMatched<T> = T extends { matched: { id: infer K } }
 	: '';
 
 export type ValidMethod<S> = string &
-	KeysOfUnion<ExtractMethodsFromMatched<MatchedPaths<S & string>>>;
+	KeyofUnion<ExtractMethodsFromMatched<MatchedPaths<S & string>>>;
 
 export type MatchedPathId<S> = string & ExtractIdFromMatched<MatchedPaths<S & string>>;
 
-export type TypedResponseFromPath<S extends string, Method extends ValidMethod<S>> =
-	| TypedResponse<ExtractMethodsFromMatched<MatchedPaths<S>>[Method], true>
-	| TypedResponse<App.Error, false>;
+export type TypedResponseFromPath<S extends string, Method extends ValidMethod<S>> = TypedResponse<
+	PickUnionKey<ExtractMethodsFromMatched<MatchedPaths<S>>, Method>
+>;
 
 interface TypedRequestInitOptional<Method extends string> extends RequestInit {
 	method?: Method;
@@ -1444,8 +1446,7 @@ export interface Redirect {
 /**
  * The object returned by the typed json and typed fetch functions
  */
-export interface TypedResponse<T, Ok extends boolean = boolean> extends Response {
-	ok: Ok;
+export interface TypedResponse<T> extends Response {
 	json(): Promise<T>;
 }
 
