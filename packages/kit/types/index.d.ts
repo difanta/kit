@@ -4,6 +4,112 @@
 declare module '@sveltejs/kit' {
 	import type { CompileOptions } from 'svelte/compiler';
 	import type { PluginOptions } from '@sveltejs/vite-plugin-svelte';
+	export interface ValidURLs<ToCheck extends string> {
+		0: {
+			id: string;
+			does_match: ToCheck extends '' ? false : false;
+			methods: never;
+			endpoint: false;
+			leaf: false;
+		};
+	}
+
+	export type MatchedLeafs<S extends string> = {
+		[Index in keyof ValidURLs<S> as ValidURLs<S>[Index]['does_match'] extends true
+			? ValidURLs<S>[Index]['leaf'] extends true
+				? 'matched'
+				: never
+			: never]: ValidURLs<S>[Index];
+	};
+
+	export type MatchedPaths<S extends string> = {
+		[Index in keyof ValidURLs<S> as ValidURLs<S>[Index]['does_match'] extends true
+			? 'matched'
+			: never]: ValidURLs<S>[Index];
+	};
+
+	export type MatchedEndpoints<S extends string> = {
+		[Index in keyof ValidURLs<S> as ValidURLs<S>[Index]['does_match'] extends true
+			? ValidURLs<S>[Index]['endpoint'] extends true
+				? 'matched'
+				: never
+			: never]: ValidURLs<S>[Index];
+	};
+
+	export type Jsonify<T> = T extends { toJSON(): infer U }
+		? U
+		: T extends object
+		  ? { [k in keyof T]: Jsonify<T[k]> }
+		  : T;
+
+	export type Equals<X, Y> = (<T>() => T extends X ? 1 : 2) extends <T>() => T extends Y ? 1 : 2
+		? true
+		: false;
+
+	export type IsRelativePath<S> = S extends string
+		? S extends `/${string}` | ''
+			? true
+			: false
+		: false;
+
+	type KeyofUnion<T> = T extends T ? keyof T : never;
+
+	type PickUnionKey<T, K extends KeyofUnion<T>> = T extends { [k in K]?: any } ? T[K] : undefined;
+
+	type ExtractMethodsFromMatched<T> = T extends { matched: { methods: infer K } } ? K : {};
+
+	export type ExtractIdFromMatched<T> = T extends { matched: { id: infer K } }
+		? K extends string
+			? K
+			: ''
+		: '';
+
+	export type ValidMethod<S> = string &
+		KeyofUnion<ExtractMethodsFromMatched<MatchedPaths<S & string>>>;
+
+	export type MatchedPathId<S> = string & ExtractIdFromMatched<MatchedPaths<S & string>>;
+
+	export type TypedResponseFromPath<S extends string, Method extends ValidMethod<S>> = TypedResponse<
+		PickUnionKey<ExtractMethodsFromMatched<MatchedPaths<S>>, Method>
+	>;
+
+	interface TypedRequestInitOptional<Method extends string> extends RequestInit {
+		method?: Method;
+	}
+	interface TypedRequestInitRequired<Method extends string> extends RequestInit {
+		method: Method;
+	}
+
+	export type TypedRequestInit<Method extends string, S> = 'GET' extends ValidMethod<S & string>
+		? [init?: TypedRequestInitOptional<Method | ValidMethod<S & string>>]
+		: [init: TypedRequestInitRequired<Method>];
+
+	export type MatchPaths<S extends string> = IsRelativePath<S> extends true
+		? MatchedPaths<S> extends { matched: any }
+			? S
+			: `No matched path with ${S}`
+		: `Is not a relative path`;
+
+	export type MatchPathsFallback<S extends string> = IsRelativePath<S> extends true
+		? MatchedPaths<S> extends { matched: { methods: infer K } }
+			? Equals<K, Record<string, any>> extends true
+				? S
+				: `Is a match for ${MatchedPathId<S>} but valid methods exist: ${ValidMethod<S>}`
+			: Equals<S, string> extends true
+			  ? S
+			  : `No matched path with ${S}`
+		: URL | RequestInfo;
+
+	export function fetch<S>(
+		input: S extends string ? MatchPathsFallback<S> : URL | RequestInfo,
+		init?: RequestInit
+	): Promise<Response>;
+
+	export function fetch<S, Method extends ValidMethod<S & string> = 'GET' & ValidMethod<S & string>>(
+		input: S extends string ? MatchPaths<S> : `Is not a string`,
+		...init: TypedRequestInit<Method, S>
+	): Promise<TypedResponseFromPath<S & string, Method>>;
+
 	/**
 	 * [Adapters](https://kit.svelte.dev/docs/adapters) are responsible for taking the production build and turning it into something that can be deployed to a platform of your choosing.
 	 */
@@ -1112,7 +1218,9 @@ declare module '@sveltejs/kit' {
 	export type RequestHandler<
 		Params extends Partial<Record<string, string>> = Partial<Record<string, string>>,
 		RouteId extends string | null = string | null
-	> = (event: RequestEvent<Params, RouteId>) => MaybePromise<Response>;
+	> = (
+		event: RequestEvent<Params, RouteId>
+	) => MaybePromise<Response extends TypedResponse<infer T> ? TypedResponse<T> : Response>;
 
 	export interface ResolveOptions {
 		/**
@@ -1315,6 +1423,13 @@ declare module '@sveltejs/kit' {
 		status: 300 | 301 | 302 | 303 | 304 | 305 | 306 | 307 | 308;
 		/** The location to redirect to. */
 		location: string;
+	}
+
+	/**
+	 * The object returned by the typed json and typed fetch functions
+	 */
+	export interface TypedResponse<T> extends Response {
+		json(): Promise<T>;
 	}
 
 	export type SubmitFunction<
@@ -1795,7 +1910,9 @@ declare module '@sveltejs/kit' {
 	 * @throws {Redirect} This error instructs SvelteKit to redirect to the specified location.
 	 * @throws {Error} If the provided status is invalid.
 	 * */
-	export function redirect(status: 300 | 301 | 302 | 303 | 304 | 305 | 306 | 307 | 308 | ({} & number), location: string | URL): never;
+	export function redirect<S>(status: 300 | 301 | 302 | 303 | 304 | 305 | 306 | 307 | 308, location: import("@sveltejs/kit").IsRelativePath<S> extends true ? import("@sveltejs/kit").MatchedPaths<S & string> extends {
+		matched: any;
+	} ? S & string : import("@sveltejs/kit").Equals<S, string> extends true ? S & string : `no matched path with id: ${S & string}` : string): never;
 	/**
 	 * Checks whether this is a redirect thrown by {@link redirect}.
 	 * @param e The object to check.
@@ -1805,8 +1922,8 @@ declare module '@sveltejs/kit' {
 	 * Create a JSON `Response` object from the supplied data.
 	 * @param data The value that will be serialized as JSON.
 	 * @param init Options such as `status` and `headers` that will be added to the response. `Content-Type: application/json` and `Content-Length` headers will be added automatically.
-	 */
-	export function json(data: any, init?: ResponseInit | undefined): Response;
+	 * */
+	export function json<T extends unknown = any>(data: T, init?: ResponseInit | undefined): import("@sveltejs/kit").TypedResponse<T>;
 	/**
 	 * Create a `Response` object from the supplied body.
 	 * @param body The value that will be used as-is.
@@ -1823,7 +1940,7 @@ declare module '@sveltejs/kit' {
 	 * @param status The [HTTP status code](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status#client_error_responses). Must be in the range 400-599.
 	 * @param data Data associated with the failure (e.g. validation errors)
 	 * */
-	export function fail<T extends Record<string, unknown> | undefined = undefined>(status: number, data: T): ActionFailure<T>;
+	export function fail<T extends Record<string, unknown> | undefined = undefined>(status: number, data: T): import("@sveltejs/kit").ActionFailure<T>;
 	export type LessThan<TNumber extends number, TArray extends any[] = []> = TNumber extends TArray['length'] ? TArray[number] : LessThan<TNumber, [...TArray, TArray['length']]>;
 	export type NumericRange<TStart extends number, TEnd extends number> = Exclude<TEnd | LessThan<TEnd>, LessThan<TStart>>;
 	export const VERSION: string;
@@ -2059,7 +2176,11 @@ declare module '$app/navigation' {
 	 * @param url Where to navigate to. Note that if you've set [`config.kit.paths.base`](https://kit.svelte.dev/docs/configuration#paths) and the URL is root-relative, you need to prepend the base path if you want to navigate within the app.
 	 * @param {Object} opts Options related to the navigation
 	 * */
-	export function goto(url: string | URL, opts?: {
+	export function goto<S>(url: S extends string ? import("@sveltejs/kit").MatchedLeafs<S> extends {
+		matched: any;
+	} ? S : import("@sveltejs/kit").Equals<S, string> extends true ? S : {
+		error: `no matched routes with id: ${S}`;
+	} : string | URL, opts?: {
 		replaceState?: boolean | undefined;
 		noScroll?: boolean | undefined;
 		keepFocus?: boolean | undefined;
@@ -2132,19 +2253,21 @@ declare module '$app/navigation' {
 }
 
 declare module '$app/paths' {
+	interface paths {}
 	/**
 	 * A string that matches [`config.kit.paths.base`](https://kit.svelte.dev/docs/configuration#paths).
 	 *
 	 * Example usage: `<a href="{base}/your-page">Link</a>`
 	 */
-	export let base: '' | `/${string}`;
-
+	export let base: paths extends { base: infer T } ? T : '' | `/${string}`;
 	/**
 	 * An absolute path that matches [`config.kit.paths.assets`](https://kit.svelte.dev/docs/configuration#paths).
 	 *
 	 * > If a value for `config.kit.paths.assets` is specified, it will be replaced with `'/_svelte_kit_assets'` during `vite dev` or `vite preview`, since the assets don't yet live at their eventual URL.
 	 */
-	export let assets: '' | `https://${string}` | `http://${string}` | '/_svelte_kit_assets';
+	export let assets: paths extends { assets: infer T }
+		? T
+		: '' | `https://${string}` | `http://${string}` | '/_svelte_kit_assets';
 
 	/**
 	 * Populate a route ID with params to resolve a pathname.

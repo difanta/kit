@@ -644,6 +644,7 @@ async function load_node({ loader, parent, url, params, route, server_data_node 
 					}
 				}
 			),
+			// @ts-ignore FETCH TODO
 			async fetch(resource, init) {
 				/** @type {URL | string} */
 				let requested;
@@ -1718,6 +1719,7 @@ export function goto(url, opts = {}) {
 		throw new Error('Cannot call goto(...) on the server');
 	}
 
+	// @ts-ignore FETCH TODO
 	url = resolve_url(url);
 
 	if (url.origin !== origin) {
